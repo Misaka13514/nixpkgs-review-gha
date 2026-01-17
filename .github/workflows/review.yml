@@ -43,6 +43,15 @@ on:
           - yes_sandbox_false
           - yes_sandbox_relaxed
           - yes_sandbox_true
+      impurity:
+        description: "Impurity level"
+        required: true
+        type: choice
+        default: pure
+        options:
+          - pure
+          - impure
+          - impure_allow_unfree
       extra-args:
         description: "nixpkgs-review extra args"
         required: false
@@ -149,6 +158,19 @@ jobs:
             || matrix.system == 'aarch64-darwin' && inputs.aarch64-darwin == 'yes_sandbox_relaxed') && 'relaxed'
             || 'true' }}
 
+      - name: create nixpkgs config
+        if: inputs.impurity == 'impure_allow_unfree'
+        shell: bash
+        # Nixpkgs config allows to build unfree packages
+        run: |
+          mkdir -p ~/.config/nixpkgs
+          cat > ~/.config/nixpkgs/config.nix <<EOF
+          {
+            allowUnfree = true;
+            nvidia.acceptLicense = true;
+          }
+          EOF
+
       - name: install packages
         run: |
           pkgs=(coreutils nixpkgs-review jq gnused)
@@ -170,11 +192,12 @@ jobs:
         run: |
           nixpkgs-review -- \
             pr ${PR_NUMBER} \
+            ${{ inputs.impurity == 'impure_allow_unfree' && '--eval local' || '' }} \
             --no-shell \
             --no-exit-status \
             --no-headers \
             --print-result \
-            --build-args="-L" \
+            --build-args="-L ${{ inputs.impurity != 'pure' && '--impure' || '' }}" \
             --pr-json="$PR_JSON" \
             $EXTRA_ARGS
         working-directory: nixpkgs
@@ -182,6 +205,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           EXTRA_ARGS: ${{ inputs.extra-args }}
           PR_JSON: ${{ needs.prepare.outputs.pr }}
+          NIXPKGS_ALLOW_UNFREE: ${{ inputs.impurity == 'impure_allow_unfree' && '1' || '0' }}
 
       - name: push results to cache
         if: ${{ inputs.push-to-cache && ((vars.ATTIC_SERVER != '' && vars.ATTIC_CACHE != '') || vars.CACHIX_CACHE != '') }}
