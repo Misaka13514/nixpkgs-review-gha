@@ -40,6 +40,15 @@ on:
           - yes_sandbox_false
           - yes_sandbox_relaxed
           - yes_sandbox_true
+      impurity:
+        description: "Impurity level"
+        required: true
+        type: choice
+        default: pure
+        options:
+          - pure
+          - impure
+          - impure_allow_unfree
       upterm:
         description: "Start upterm session after nix build"
         required: true
@@ -84,8 +93,24 @@ jobs:
             || matrix.system == 'aarch64-darwin' && inputs.aarch64-darwin == 'yes_sandbox_relaxed') && 'relaxed'
             || 'true' }}
 
+      - name: create nixpkgs config
+        if: inputs.impurity == 'impure_allow_unfree'
+        shell: bash
+        # Nixpkgs config allows to build unfree packages
+        run: |
+          mkdir -p ~/.config/nixpkgs
+          cat > ~/.config/nixpkgs/config.nix <<EOF
+          {
+            allowUnfree = true;
+            nvidia.acceptLicense = true;
+          }
+          EOF
+
       - name: nix build
-        run: nix build --keep-going -L ${{ inputs.packages }}
+        run: >-
+          nix build --keep-going -L \
+            ${{ inputs.impurity != 'pure' && '--impure' || '' }} \
+            ${{ inputs.packages }}
         if: ${{ inputs.packages != '' }}
 
       - name: set GITHUB_TOKEN
